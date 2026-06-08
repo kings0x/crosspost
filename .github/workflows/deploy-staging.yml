@@ -1,0 +1,217 @@
+name: deploy-staging
+
+on:
+  push:
+    branches:
+      - staging
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo bash
+          sudo apt-get install -y infisical
+
+      - name: Pull secrets from Infisical
+        run: |
+          infisical export \
+            --clientId=$INFISICAL_CLIENT_ID \
+            --clientSecret=$INFISICAL_CLIENT_SECRET \
+            --projectId=$INFISICAL_PROJECT_ID \
+            --env=staging \
+            --format=dotenv >> $GITHUB_ENV
+        env:
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+
+      - name: Run migrations
+        run: go run ./cmd/migrate/main.go up
+
+  deploy:
+    name: Deploy staging and smoke test
+    needs: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+
+    env:
+      INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+      INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+      INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+      INFISICAL_ENV: staging
+      INFISICAL_DISABLE_UPDATE_CHECK: true
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo bash
+          sudo apt-get install -y infisical
+
+      - name: Pull secrets from Infisical
+        run: |
+          infisical export \
+            --clientId=$INFISICAL_CLIENT_ID \
+            --clientSecret=$INFISICAL_CLIENT_SECRET \
+            --projectId=$INFISICAL_PROJECT_ID \
+            --env=staging \
+            --format=dotenv >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_NAME }}:staging
+            ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Resolve Render service ID
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${RENDER_SERVICE_ID:-}" ]]; then
+            echo "service_id=${RENDER_SERVICE_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          response="$(curl -sS --fail \
+            "https://api.render.com/v1/services?name=${RENDER_SERVICE_NAME}&limit=1" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Accept: application/json")"
+
+          service_id="$(printf '%s' "$response" | jq -r '.[0].service.id // .[0].id // empty')"
+          if [[ -z "$service_id" ]]; then
+            echo "Failed to resolve Render service ID for ${RENDER_SERVICE_NAME}"
+            exit 1
+          fi
+
+          echo "service_id=$service_id" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Render deploy
+        id: trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+          response="$(curl -sS --fail \
+            -X POST \
+            "https://api.render.com/v1/services/${{ steps.resolve.outputs.service_id }}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}')"
+
+          deploy_id="$(printf '%s' "$response" | jq -r '.id // .deploy.id // empty')"
+          if [[ -z "$deploy_id" ]]; then
+            echo "Failed to parse deploy ID from Render response"
+            exit 1
+          fi
+
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          echo "Deploy started: $deploy_id"
+
+      - name: Poll for deploy completion
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deploy_id="${{ steps.trigger.outputs.deploy_id }}"
+          status=""
+
+          for attempt in $(seq 1 40); do
+            response="$(curl -sS --fail \
+              "https://api.render.com/v1/services/${{ steps.resolve.outputs.service_id }}/deploys/${deploy_id}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}")"
+
+            status="$(printf '%s' "$response" | jq -r '.status // .deploy.status // empty')"
+            echo "Attempt ${attempt}: deploy status=${status}"
+
+            case "$status" in
+              live)
+                break
+                ;;
+              *failed|canceled)
+                echo "Render deploy ended with status ${status}"
+                printf '%s\n' "$response" | jq '.'
+                exit 1
+                ;;
+              *)
+                sleep 15
+                ;;
+            esac
+          done
+
+          if [[ "$status" != "live" ]]; then
+            echo "Deploy did not reach live status within 10 minutes"
+            exit 1
+          fi
+
+      - name: Smoke test staging health
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          url="${BACKEND_URL}/health"
+
+          for attempt in $(seq 1 5); do
+            body_file="$(mktemp)"
+            http_status="$(curl -sS -o "$body_file" -w '%{http_code}' "$url" || true)"
+            body_status="$(jq -r '.status // empty' "$body_file" 2>/dev/null || true)"
+
+            if [[ "$http_status" == "200" && "$body_status" == "ok" ]]; then
+              echo "Health check passed on attempt ${attempt}"
+              echo "health_status=ok" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "Health check failed on attempt ${attempt} with status=${http_status}"
+            sleep 10
+          done
+
+          echo "Staging health check did not return 200 {\"status\":\"ok\"}"
+          exit 1
+
+      - name: Summarize staging deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          start_time='${{ steps.trigger.outputs.started_at }}'
+          end_time="$(date +%s)"
+          duration="$((end_time - start_time))"
+
+          echo "Deploy ID: ${{ steps.trigger.outputs.deploy_id }}"
+          echo "Duration: ${duration}s"
+          echo "Image: ghcr.io/${{ env.IMAGE_NAME }}:staging"
+          echo "Staging URL: ${BACKEND_URL}"
+          echo "Health check status: ${{ steps.smoke.outputs.health_status }}"

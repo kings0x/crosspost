@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+
+    environment:
+      POSTGRES_USER: crosspost
+      POSTGRES_PASSWORD: crosspost
+      POSTGRES_DB: crosspost
+
+    ports:
+      - '5432:5432'
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crosspost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
+  redis: 
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    
+  #Traces
+  jaegar:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaegar
+    ports:
+      - "16686:16686"   # jaeger UI
+      - "4317:4317"     # OTLP gRPC — your Go app sends traces here
+      - "4318:4318"     # OTLP HTTP — alternative
+
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+
+  #Metrics
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"   # keep 7 days of metrics
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # lets container reach your host machine
+
+
+  #Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin   
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor  # enables jaeger tracing UI in grafana
+
+    depends_on:
+      - jaegar
+      - prometheus
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

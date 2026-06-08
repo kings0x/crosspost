@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: seidar
+    orgId: 1
+    folder: "Seidar" # folder name in grafana UI
+    type: file
+    disableDeletion: false # allow deleting dashboards from UI
+    updateIntervalSeconds: 30 # check for json changes every 30 seconds
+    options:
+      path: /etc/grafana/provisioning/dashboards # where grafana looks for json files
