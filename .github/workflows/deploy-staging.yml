@@ -20,10 +20,18 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Cache Infisical CLI
+        id: cache-infisical
+        uses: actions/cache@v4
+        with:
+          path: /usr/bin/infisical
+          key: infisical-${{ runner.os }}-latest
+
       - name: Install Infisical CLI
+        if: steps.cache-infisical.outputs.cache-hit != 'true'
         run: |
           curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo bash
-          sudo apt-get install -y infisical
+          sudo apt-get update && sudo apt-get install -y infisical
 
       - name: Pull secrets from Infisical
         env:
@@ -42,10 +50,10 @@ jobs:
             --token="${INFISICAL_TOKEN}" \
             --projectId="${INFISICAL_PROJECT_ID}" \
             --env=staging \
-            --format=dotenv >> "$GITHUB_ENV"
+            --format=dotenv > /tmp/infisical_secrets.env
 
-          # strip leading/trailing quotes from all exported values
-          sed -i "s/='\\(.*\\)'/=\\1/" "$GITHUB_ENV"
+          # strip all single quotes then write to GITHUB_ENV
+          sed "s/'//g" /tmp/infisical_secrets.env >> "$GITHUB_ENV"
 
       - name: Install migrate CLI
         run: |
@@ -71,7 +79,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Infisical CLI
+        id: cache-infisical
+        uses: actions/cache@v4
+        with:
+          path: /usr/bin/infisical
+          key: infisical-${{ runner.os }}-latest
+
       - name: Install Infisical CLI
+        if: steps.cache-infisical.outputs.cache-hit != 'true'
         run: |
           curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo bash
           sudo apt-get update && sudo apt-get install -y infisical
@@ -93,7 +109,19 @@ jobs:
             --token="${INFISICAL_TOKEN}" \
             --projectId="${INFISICAL_PROJECT_ID}" \
             --env=staging \
-            --format=dotenv >> "$GITHUB_ENV"
+            --format=dotenv > /tmp/infisical_secrets.env
+
+          # strip all single quotes then write to GITHUB_ENV
+          sed "s/'//g" /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+
+      - name: Install migrate CLI
+        run: |
+          go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+
+      - name: Run migrations
+        run: |
+          MIGRATION_URL=$(echo "${DATABASE_URL}" | tr -d "'" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
+          migrate -path ./migrations -database "${MIGRATION_URL}" up
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
