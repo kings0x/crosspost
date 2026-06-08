@@ -66,7 +66,7 @@ jobs:
 
       - name: Run migrations
         run: |
-          MIGRATION_URL=$(echo "${DATABASE_URL}" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
+          MIGRATION_URL=$(echo "${DATABASE_URL}" | tr -d "'" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
           migrate -path ./migrations -database "${MIGRATION_URL}" up
 
       - name: Test

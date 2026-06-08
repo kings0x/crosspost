@@ -50,9 +50,7 @@ jobs:
 
       - name: Run migrations
         run: |
-          echo "Original URL scheme: $(echo "${DATABASE_URL}" | cut -d: -f1)"
-          MIGRATION_URL=$(echo "${DATABASE_URL}" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
-          echo "Migration URL scheme: $(echo "${MIGRATION_URL}" | cut -d: -f1)"
+          MIGRATION_URL=$(echo "${DATABASE_URL}" | tr -d "'" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
           migrate -path ./migrations -database "${MIGRATION_URL}" up
 
   deploy:
