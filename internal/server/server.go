@@ -9,19 +9,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kings0x/crossPost/internal/cache"
+	"github.com/kings0x/crossPost/internal/auth"
 	"github.com/kings0x/crossPost/internal/config"
 	"github.com/kings0x/crossPost/internal/db"
 	"github.com/kings0x/crossPost/internal/middleware"
+	rds "github.com/redis/go-redis/v9"
 )
 
 type Server struct {
 	http  *http.Server
 	db    *db.Database
-	redis cache.Cache
+	redis *rds.Client
+	cfg   *config.Config
 }
 
-func New(db *db.Database, redis cache.Cache, cfg *config.Config) *Server {
+func New(db *db.Database, redisClient *rds.Client, cfg *config.Config) *Server {
 
 	router := gin.New()
 
@@ -40,8 +42,13 @@ func New(db *db.Database, redis cache.Cache, cfg *config.Config) *Server {
 	srv := &Server{
 		http,
 		db,
-		redis,
+		redisClient,
+		cfg,
 	}
+
+	// Initialize OAuth providers and session store once at server startup
+	// so handlers don't re-register providers on each construction.
+	auth.SetupOAuth(cfg)
 
 	srv.RegisterRoutes(router)
 
@@ -85,13 +92,17 @@ func (srv *Server) RegisterRoutes(r *gin.Engine) {
 
 	r.GET("/health", srv.CheckHealth)
 
-	c := newContainer(srv.db, srv.redis)
+	c := newContainer(srv.db, srv.redis, srv.cfg)
 
 	v1 := r.Group("v1")
 	{
 		auth := v1.Group("auth")
 		{
-			auth.POST("/do-something", c.auth.DoSomehting)
+			auth.GET("/google", c.auth.OauthBegin)
+			auth.GET("/google/callback", c.auth.OauthCallback)
+			auth.POST("/signup")
+			auth.POST("login")
+			auth.POST("logout")
 		}
 	}
 }
@@ -110,7 +121,7 @@ func (srv *Server) CheckHealth(c *gin.Context) {
 		return
 	}
 
-	if err := srv.redis.Ping(c.Request.Context()); err != nil {
+	if err := srv.redis.Ping(ctx).Err(); err != nil {
 		slog.ErrorContext(ctx, "srv.redis.Ping", "err", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "not ready",

@@ -28,20 +28,20 @@ func run() error {
 
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("config.Load: %w", err)
+		return fmt.Errorf("run: %w", err)
 	}
 
 	setupLogger(cfg.APP_ENV)
 
 	pgDb, err := db.NewDatabase(ctx, cfg.DATABASE_URL)
 	if err != nil {
-		return fmt.Errorf("db.NewDatabase: %w", err)
+		return fmt.Errorf("run: %w", err)
 	}
 	defer pgDb.Close()
 
 	redis, err := cache.NewRedis(ctx, cfg.REDIS_URL)
 	if err != nil {
-		return fmt.Errorf("cache.NewRedis: %w", err)
+		return fmt.Errorf("run: %w", err)
 	}
 	defer redis.Close()
 
