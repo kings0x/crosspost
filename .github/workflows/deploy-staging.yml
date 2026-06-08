@@ -3,7 +3,7 @@ name: deploy-staging
 on:
   push:
     branches:
-      - staging
+      - develop
 
 permissions:
   contents: read
