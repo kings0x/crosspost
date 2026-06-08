@@ -45,7 +45,9 @@ jobs:
             --format=dotenv >> "$GITHUB_ENV"
 
       - name: Run migrations
-        run: go run ./cmd/migrate/ up
+        run: |
+          go build -o migrate-bin ./cmd/migrate/
+          ./migrate-bin up
 
   deploy:
     name: Deploy staging and smoke test
