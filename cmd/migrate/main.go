@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/kings0x/crossPost/internal/config"
 	"github.com/kings0x/crossPost/internal/db"
@@ -38,6 +39,18 @@ func main() {
 	case "down":
 		if err := mm.Down(); err != nil {
 			log.Fatalf("mm.Down: %v", err)
+		}
+
+	case "force":
+		if len(os.Args) < 3 {
+			log.Fatal("usage: migrate force <version>")
+		}
+		version, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			log.Fatalf("invalid version: %v", err)
+		}
+		if err := mm.Force(version); err != nil {
+			log.Fatalf("mm.Force: %v", err)
 		}
 	default:
 		log.Fatalf("unknown direction: %s", direction)

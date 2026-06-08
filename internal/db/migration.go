@@ -44,6 +44,13 @@ func (mm *MigrationManager) Down() error {
 	return nil
 }
 
+func (mm *MigrationManager) Force(version int) error {
+	if err := mm.migrate.Force(version); err != nil {
+		return fmt.Errorf("MigrationManager.Force: %w", err)
+	}
+	return nil
+}
+
 func RunMigrations(dbURL, migrationsPath string) error {
 	mm, err := NewMigrationManager(dbURL, migrationsPath)
 	if err != nil {
