@@ -107,11 +107,22 @@ help:
 	@echo "  make gh-staging CLIENT_ID=xxx CLIENT_SECRET=xxx PROJECT_ID=xxx"
 	@echo ""
 
-migrate:
-	@infisical run --env=dev --path=/ -- go run ./cmd/migrate/main.go up
+
+# ────────────────────────────────────────────
+# Development
+# ────────────────────────────────────────────
+
+
+migrate-up:
+	@infisical run --env=dev -- migrate -path ./migrations -database "$$DATABASE_URL" up
+
+migrate-down:
+	@infisical run --env=dev -- migrate -path ./migrations -database "$$DATABASE_URL" down
+
+migrate-force:
+	@infisical run --env=dev -- migrate -path ./migrations -database "$$DATABASE_URL" force $(VERSION)
 
 run:
 	@infisical run --env=dev --path=/ -- go run ./cmd/api/main.go
 
-dev: migrate run
-
+dev: migrate-up run

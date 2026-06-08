@@ -60,8 +60,13 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v4
 
-      - name: db migration
-        run: go run ./cmd/migrate/main.go up
+      - name: Install migrate CLI
+        run: |
+          go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+
+      - name: Run migrations
+        run: |
+          migrate -path ./migrations -database "${DATABASE_URL}" up
 
       - name: Test
         run: go test -race ./...
