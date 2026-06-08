@@ -27,12 +27,19 @@ jobs:
 
       - name: Pull secrets from Infisical
         run: |
+          INFISICAL_TOKEN=$(infisical login \
+            --method=universal-auth \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
+            --silent \
+            --plain)
+
           infisical export \
-            --clientId=$INFISICAL_CLIENT_ID \
-            --clientSecret=$INFISICAL_CLIENT_SECRET \
-            --projectId=$INFISICAL_PROJECT_ID \
+            --token="$INFISICAL_TOKEN" \
+            --projectId="$INFISICAL_PROJECT_ID" \
             --env=staging \
-            --format=dotenv >> $GITHUB_ENV
+            --format=dotenv >> "$GITHUB_ENV"
+
         env:
           INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
           INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
