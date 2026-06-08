@@ -2,11 +2,11 @@ package db
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/lib/pq"
 )
 
 type MigrationManager struct {
@@ -14,9 +14,13 @@ type MigrationManager struct {
 }
 
 func NewMigrationManager(dbURL, migrationsPath string) (*MigrationManager, error) {
+	// pgx/v5 driver requires pgx5:// scheme
+	pgxURL := strings.Replace(dbURL, "postgres://", "pgx5://", 1)
+	pgxURL = strings.Replace(pgxURL, "postgresql://", "pgx5://", 1)
+
 	mm, err := migrate.New(
 		fmt.Sprintf("file://%s", migrationsPath),
-		dbURL,
+		pgxURL,
 	)
 
 	if err != nil {
