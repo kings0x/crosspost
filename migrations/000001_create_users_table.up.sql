@@ -6,7 +6,7 @@ CREATE TABLE users (
     password_hash TEXT,
     avatar_url TEXT,
     email_verified BOOLEAN DEFAULT false,
-    email_verified_at TIMESTAMPZ,
+    email_verified_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 )
