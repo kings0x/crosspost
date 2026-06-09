@@ -222,7 +222,7 @@ func (s *AuthService) ServiceSignUp(ctx context.Context, cfg *config.Config, ema
 		return fmt.Errorf("ServiceSignUp: %w", err)
 	}
 	tokenHash := hashToken(token)
-	payload := map[string]string{"user_id": userID.String(), "kind": "verify_email", "email": emailAddr}
+	payload := TokenPayload{UserID: userID.String(), Kind: "verify_email", Email: emailAddr}
 	b, _ := json.Marshal(payload)
 	if err := s.repo.repoSetUserToken(ctx, "token:"+tokenHash, b, 5*time.Minute); err != nil {
 		return fmt.Errorf("ServiceSignUp: %w", err)
@@ -247,12 +247,12 @@ func (s *AuthService) ServiceVerifyEmail(ctx context.Context, cfg *config.Config
 	if err != nil {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", err)
 	}
-	var payload map[string]string
+	var payload TokenPayload
 	if err := json.Unmarshal([]byte(res), &payload); err != nil {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", err)
 	}
-	uid, ok := payload["user_id"]
-	if !ok {
+	uid := payload.UserID
+	if uid == "" {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", fmt.Errorf("invalid token payload"))
 	}
 
@@ -279,7 +279,7 @@ func (s *AuthService) ServiceVerifyEmail(ctx context.Context, cfg *config.Config
 
 	resp := LoginUserResponse{
 		UserId:       uid,
-		Email:        payload["email"],
+		Email:        payload.Email,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		AvatarURL:    "",
@@ -342,18 +342,18 @@ func (s *AuthService) ServiceRefresh(ctx context.Context, cfg *config.Config, ra
 	if err != nil {
 		return nil, fmt.Errorf("ServiceRefresh: %w", err)
 	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal([]byte(sessionStr), &payload); err != nil {
+	var sp SessionPayload
+	if err := json.Unmarshal([]byte(sessionStr), &sp); err != nil {
 		return nil, fmt.Errorf("ServiceRefresh: %w", err)
 	}
-	uid, _ := payload["user_id"].(string)
+	uid := sp.UserID
 
 	newRefresh, err := createRefreshToken()
 	if err != nil {
 		return nil, fmt.Errorf("ServiceRefresh: %w", err)
 	}
 	newHash := hashToken(newRefresh)
-	newPayload := map[string]interface{}{"user_id": uid, "user_agent": userAgent, "ip_address": ipAddr}
+	newPayload := SessionPayload{UserID: uid, UserAgent: userAgent, IPAddress: ipAddr}
 	b, _ := json.Marshal(newPayload)
 	ttl := 30 * 24 * time.Hour
 	if err := s.repo.repoRotateSession(ctx, oldHash, newHash, b, ttl); err != nil {
@@ -388,9 +388,20 @@ func (s *AuthService) ServiceRevoke(ctx context.Context, rawRefreshToken string)
 	return nil
 }
 
+// Logout: remove all sessions for a user (used when logging out via access token)
+func (s *AuthService) ServiceLogout(ctx context.Context, userID string) error {
+	if userID == "" {
+		return fmt.Errorf("ServiceLogout: %w", fmt.Errorf("missing user id"))
+	}
+	if err := s.repo.repoDeleteSessionsByUser(ctx, userID); err != nil {
+		return fmt.Errorf("ServiceLogout: %w", err)
+	}
+	return nil
+}
+
 // Argon2id password helpers (inlined here to keep auth package as handler->service->repo)
 const (
-	argonTime    uint32 = 1
+	argonTime    uint32 = 2
 	argonMemory  uint32 = 64 * 1024
 	argonThreads uint8  = 4
 	argonKeyLen  uint32 = 32
@@ -427,14 +438,28 @@ func ComparePassword(encoded, password string) error {
 		if len(pair) != 2 {
 			continue
 		}
+		var err error
 		switch pair[0] {
 		case "m":
-			m, _ = strconv.ParseUint(pair[1], 10, 32)
+			m, err = strconv.ParseUint(pair[1], 10, 32)
+			if err != nil {
+				return fmt.Errorf("ComparePassword: invalid m parameter")
+			}
 		case "t":
-			t, _ = strconv.ParseUint(pair[1], 10, 32)
+			t, err = strconv.ParseUint(pair[1], 10, 32)
+			if err != nil {
+				return fmt.Errorf("ComparePassword: invalid t parameter")
+			}
 		case "p":
-			p, _ = strconv.ParseUint(pair[1], 10, 8)
+			p, err = strconv.ParseUint(pair[1], 10, 8)
+			if err != nil {
+				return fmt.Errorf("ComparePassword: invalid p parameter")
+			}
 		}
+	}
+
+	if m == 0 || t == 0 || p == 0 {
+		return fmt.Errorf("ComparePassword: invalid argon2 parameters")
 	}
 
 	saltB64 := parts[4]

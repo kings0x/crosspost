@@ -31,12 +31,12 @@ func TestRepoSessionInsertAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repoGetSession: %v", err)
 	}
-	var out map[string]interface{}
+	var out SessionPayload
 	if err := json.Unmarshal([]byte(got), &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if out["user_id"] != "u1" {
-		t.Fatalf("unexpected user_id: %v", out["user_id"])
+	if out.UserID != "u1" {
+		t.Fatalf("unexpected user_id: %v", out.UserID)
 	}
 }
 
@@ -53,7 +53,7 @@ func TestRepoRotateSession(t *testing.T) {
 	ctx := context.Background()
 	oldHash := "oldhash"
 	// prepare payload for old session
-	payload := map[string]string{"user_id": "u1"}
+	payload := SessionPayload{UserID: "u1"}
 	b, _ := json.Marshal(payload)
 	if err := repo.redis.Set(ctx, "session:"+oldHash, string(b), time.Hour).Err(); err != nil {
 		t.Fatalf("set old session: %v", err)

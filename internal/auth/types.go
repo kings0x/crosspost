@@ -22,6 +22,20 @@ type OAuthState struct {
 	Intent   string `json:"intent"`            // "login", "signup", "connect"
 }
 
+// TokenPayload represents one-time tokens stored in Redis (magic links, etc.)
+type TokenPayload struct {
+	UserID string `json:"user_id"`
+	Kind   string `json:"kind,omitempty"`
+	Email  string `json:"email,omitempty"`
+}
+
+// SessionPayload represents a refresh session stored in Redis
+type SessionPayload struct {
+	UserID    string `json:"user_id"`
+	UserAgent string `json:"user_agent,omitempty"`
+	IPAddress string `json:"ip_address,omitempty"`
+}
+
 type UserRow struct {
 	ID            uuid.UUID
 	Email         string

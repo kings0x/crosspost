@@ -52,11 +52,7 @@ func (r *AuthRepository) queryUpsertUser(ctx context.Context, gothUser *goth.Use
 func (r *AuthRepository) repoInsertToken(ctx context.Context, user_id, token_hash, user_agent string, ip_address string, expires_at time.Time) error {
 	// Store session data in Redis. Key will be "session:<token_hash>".
 	key := "session:" + token_hash
-	payload := map[string]string{
-		"user_id":    user_id,
-		"user_agent": user_agent,
-		"ip_address": ip_address,
-	}
+	payload := SessionPayload{UserID: user_id, UserAgent: user_agent, IPAddress: ip_address}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("repoInsertToken: %w", err)
@@ -66,6 +62,12 @@ func (r *AuthRepository) repoInsertToken(ctx context.Context, user_id, token_has
 	if err := r.redis.Set(ctx, key, b, ttl).Err(); err != nil {
 		return fmt.Errorf("repoInsertToken: %w", err)
 	}
+	// keep quick lookup of sessions per user
+	if err := r.redis.SAdd(ctx, "user_sessions:"+user_id, key).Err(); err != nil {
+		return fmt.Errorf("repoInsertToken: %w", err)
+	}
+	// ensure the set expires no later than the session TTL
+	_ = r.redis.Expire(ctx, "user_sessions:"+user_id, ttl)
 
 	return nil
 }
@@ -218,11 +220,17 @@ func (r *AuthRepository) repoGetSession(ctx context.Context, tokenHash string) (
 }
 
 func (r *AuthRepository) repoRotateSession(ctx context.Context, oldTokenHash, newTokenHash string, payload []byte, ttl time.Duration) error {
+	// Atomic rotate: GET old, DEL old, SET new, update user_sessions set membership
 	script := rds.NewScript(`
 		local val = redis.call("GET", KEYS[1])
 		if not val then return nil end
+		local obj = cjson.decode(val)
+		local uid = obj.user_id
 		redis.call("DEL", KEYS[1])
 		redis.call("SET", KEYS[2], ARGV[1], "PX", ARGV[2])
+		redis.call("SREM", "user_sessions:"..uid, KEYS[1])
+		redis.call("SADD", "user_sessions:"..uid, KEYS[2])
+		redis.call("PEXPIRE", "user_sessions:"..uid, ARGV[2])
 		return 1
 	`)
 
@@ -239,8 +247,38 @@ func (r *AuthRepository) repoRotateSession(ctx context.Context, oldTokenHash, ne
 
 func (r *AuthRepository) repoDeleteSession(ctx context.Context, tokenHash string) error {
 	key := "session:" + tokenHash
+	// attempt to remove session and cleanup user_sessions membership
+	val, err := r.redis.Get(ctx, key).Result()
+	if err != nil {
+		if err == rds.Nil {
+			return nil
+		}
+		return fmt.Errorf("repoDeleteSession: %w", err)
+	}
+	var sp SessionPayload
+	if err := json.Unmarshal([]byte(val), &sp); err == nil {
+		_ = r.redis.SRem(ctx, "user_sessions:"+sp.UserID, key)
+	}
 	if err := r.redis.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("repoDeleteSession: %w", err)
+	}
+	return nil
+}
+
+// Delete all sessions for a user
+func (r *AuthRepository) repoDeleteSessionsByUser(ctx context.Context, userID string) error {
+	setKey := "user_sessions:" + userID
+	members, err := r.redis.SMembers(ctx, setKey).Result()
+	if err != nil && err != rds.Nil {
+		return fmt.Errorf("repoDeleteSessionsByUser: %w", err)
+	}
+	if len(members) > 0 {
+		if err := r.redis.Del(ctx, members...).Err(); err != nil {
+			return fmt.Errorf("repoDeleteSessionsByUser: %w", err)
+		}
+	}
+	if err := r.redis.Del(ctx, setKey).Err(); err != nil && err != rds.Nil {
+		return fmt.Errorf("repoDeleteSessionsByUser: %w", err)
 	}
 	return nil
 }

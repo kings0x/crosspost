@@ -116,7 +116,6 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 }
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	//we are meant to pass this from a middleware but for now we will just read it from the cookie
 	rt, err := c.Cookie("refresh_token")
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing refresh token"})
@@ -135,7 +134,6 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 }
 
 func (h *AuthHandler) Revoke(c *gin.Context) {
-	//same here refresh token should come from middleware but we will read it from the cookie for now
 	rt, err := c.Cookie("refresh_token")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing token"})
@@ -148,6 +146,42 @@ func (h *AuthHandler) Revoke(c *gin.Context) {
 	// delete cookie
 	c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, false, true)
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
+}
+
+func (h *AuthHandler) Logout(c *gin.Context) {
+	// Prefer cookie-based session revocation
+	if rt, err := c.Cookie("refresh_token"); err == nil {
+		if err := h.service.ServiceRevoke(c.Request.Context(), rt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		// clear cookie
+		secure := h.cfg.APP_ENV != "development"
+		c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, secure, true)
+		c.JSON(http.StatusOK, gin.H{"status": "logged_out"})
+		return
+	}
+
+	// Fallback: if bearer token provided, use middleware-injected user_id to remove all sessions
+	uid, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing credentials"})
+		return
+	}
+	userID, ok := uid.(string)
+	if !ok || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return
+	}
+
+	if err := h.service.ServiceLogout(c.Request.Context(), userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// clear cookie if present
+	secure := h.cfg.APP_ENV != "development"
+	c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, secure, true)
+	c.JSON(http.StatusOK, gin.H{"status": "logged_out"})
 }
 
 func setProvider(c *gin.Context) {
