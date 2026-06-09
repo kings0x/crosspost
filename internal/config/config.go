@@ -14,6 +14,11 @@ type Config struct {
 	GOOGLE_CLIENT_ID     string
 	GOOGLE_CLIENT_SECRET string
 	SESSION_SECRET       string
+	SMTP_HOST            string
+	SMTP_PORT            string
+	SMTP_USER            string
+	SMTP_PASS            string
+	FROM_EMAIL           string
 }
 
 func Load() (Config, error) {
@@ -27,6 +32,11 @@ func Load() (Config, error) {
 		GOOGLE_CLIENT_ID:     getenv("GOOGLE_CLIENT_ID", ""),
 		GOOGLE_CLIENT_SECRET: getenv("GOOGLE_CLIENT_SECRET", ""),
 		SESSION_SECRET:       getenv("SESSION_SECRET", ""),
+		SMTP_HOST:            getenv("SMTP_HOST", ""),
+		SMTP_PORT:            getenv("SMTP_PORT", ""),
+		SMTP_USER:            getenv("SMTP_USER", ""),
+		SMTP_PASS:            getenv("SMTP_PASS", ""),
+		FROM_EMAIL:           getenv("FROM_EMAIL", ""),
 	}
 
 	if err := cfg.Validate(); err != nil {

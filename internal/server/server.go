@@ -100,9 +100,11 @@ func (srv *Server) RegisterRoutes(r *gin.Engine) {
 		{
 			auth.GET("/google", c.auth.OauthBegin)
 			auth.GET("/google/callback", c.auth.OauthCallback)
-			auth.POST("/signup")
-			auth.POST("login")
-			auth.POST("logout")
+			auth.POST("/signup", c.auth.SignUp)
+			auth.POST("/login", c.auth.Login)
+			auth.GET("/verify", c.auth.VerifyEmail)
+			auth.POST("/refresh", c.auth.Refresh)
+			auth.POST("/revoke", c.auth.Revoke)
 		}
 	}
 }

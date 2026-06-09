@@ -57,7 +57,7 @@ func (h *AuthHandler) OauthCallback(c *gin.Context) {
 	}
 
 	secure := h.cfg.APP_ENV != "development"
-	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", "", secure, true)
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"userId":      res.UserId,
@@ -69,9 +69,86 @@ func (h *AuthHandler) OauthCallback(c *gin.Context) {
 
 }
 
-func (h *AuthHandler) SignUp(c *gin.Context) {}
+// SignUp and Login handlers implemented below
 
-func (h *AuthHandler) Login(c *gin.Context) {}
+func (h *AuthHandler) SignUp(c *gin.Context) {
+	var req signupRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if err := h.service.ServiceSignUp(c.Request.Context(), h.cfg, req.Email, req.Password); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"status": "verification_sent"})
+}
+
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req loginRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	res, err := h.service.ServiceLogin(c.Request.Context(), h.cfg, req.Email, req.Password, c.Request.UserAgent(), c.ClientIP())
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	secure := h.cfg.APP_ENV != "development"
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	c.JSON(http.StatusOK, gin.H{"access_token": res.AccessToken, "user_id": res.UserId})
+}
+
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	token := c.Query("token")
+	res, err := h.service.ServiceVerifyEmail(c.Request.Context(), h.cfg, token, c.Request.UserAgent(), c.ClientIP())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	secure := h.cfg.APP_ENV != "development"
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	c.JSON(http.StatusOK, gin.H{"access_token": res.AccessToken, "user_id": res.UserId})
+}
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	//we are meant to pass this from a middleware but for now we will just read it from the cookie
+	rt, err := c.Cookie("refresh_token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing refresh token"})
+		return
+	}
+
+	res, err := h.service.ServiceRefresh(c.Request.Context(), h.cfg, rt, c.Request.UserAgent(), c.ClientIP())
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	secure := h.cfg.APP_ENV != "development"
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	c.JSON(http.StatusOK, gin.H{"access_token": res.AccessToken})
+}
+
+func (h *AuthHandler) Revoke(c *gin.Context) {
+	//same here refresh token should come from middleware but we will read it from the cookie for now
+	rt, err := c.Cookie("refresh_token")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing token"})
+		return
+	}
+	if err := h.service.ServiceRevoke(c.Request.Context(), rt); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// delete cookie
+	c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, false, true)
+	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
+}
 
 func setProvider(c *gin.Context) {
 	provider := c.Param("provider")
