@@ -98,14 +98,20 @@ func (srv *Server) RegisterRoutes(r *gin.Engine) {
 	{
 		auth := v1.Group("auth")
 		{
-			auth.GET("/google", c.auth.OauthBegin)
-			auth.GET("/google/callback", c.auth.OauthCallback)
+			auth.POST("/forgot-password", c.auth.ForgotPassword)
+			auth.POST("/reset-password", c.auth.ResetPassword)
 			auth.POST("/signup", c.auth.SignUp)
 			auth.POST("/login", c.auth.Login)
 			auth.GET("/verify", c.auth.VerifyEmail)
 			auth.POST("/refresh", c.auth.Refresh)
 			auth.POST("/revoke", c.auth.Revoke)
 			auth.POST("/logout", middleware.RequireAuth(srv.cfg), c.auth.Logout)
+
+			oauth := auth.Group("/oauth")
+			{
+				oauth.GET("/:provider", c.auth.OauthBegin)
+				oauth.GET("/:provider/callback", c.auth.OauthCallback)
+			}
 		}
 	}
 }

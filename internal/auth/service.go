@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -33,79 +34,29 @@ func NewAuthService(repo *AuthRepository) *AuthService {
 	return &AuthService{repo}
 }
 
-func (s *AuthService) ServiceOauthBegin(ctx context.Context, cfg *config.Config, platform, intent string) (string, error) {
-	state := uuid.New().String()
-
-	oauthState := OAuthState{
-		UserID:   state,
-		Platform: platform,
-		Intent:   intent,
-	}
-
-	data, err := json.Marshal(oauthState)
-	if err != nil {
-		return "", fmt.Errorf("ServiceOauthBegin: %w", err)
-	}
-
-	key := "oauth_state:" + state
-	if err := s.repo.repoSetOauthState(ctx, key, data, 5*time.Minute); err != nil {
-		return "", fmt.Errorf("ServiceOauthBegin: %w", err)
-	}
-
-	// begin oauth with our state
-	provider, err := goth.GetProvider(platform)
-	if err != nil {
-		return "", fmt.Errorf("ServiceOauthBegin: %w", err)
-	}
-
-	session, err := provider.BeginAuth(state)
-	if err != nil {
-		return "", fmt.Errorf("ServiceOauthBegin: %w", err)
-	}
-
-	url, err := session.GetAuthURL()
-	if err != nil {
-		return "", fmt.Errorf("ServiceOauthBegin: %w", err)
-	}
-
-	return url, nil
-
-}
-
-func (s *AuthService) ServiceOauthCallback(ctx context.Context, cfg *config.Config, gothUser *goth.User, state string, user_agent, ip_address string) (*LoginUserResponse, error) {
-
-	// verify state from Redis (atomic GET+DEL)
-	if state == "" {
-		return nil, fmt.Errorf("ServiceOauthCallback: %w", fmt.Errorf("missing oauth state"))
-	}
-
-	val, err := s.repo.repoVerifyOauthState(ctx, "oauth_state:"+state)
-	if err != nil {
-		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
-	}
-
-	var oauthState OAuthState
-	if err := json.Unmarshal([]byte(val), &oauthState); err != nil {
-		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
-	}
+func (s *AuthService) ServiceOauthCallback(ctx context.Context, cfg *config.Config, gothUser *goth.User, user_agent, ip_address string) (*LoginUserResponse, error) {
 
 	user, err := s.repo.queryUpsertUser(ctx, gothUser)
 	if err != nil {
+		slog.Info("queryUpsertUser", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
 	}
 
 	// persist oauth account details
 	if err := s.repo.repoInsertOauthAccount(ctx, user.ID.String(), *gothUser); err != nil {
+		slog.Info("InsertOauthAcc", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
 	}
 
 	accessToken, err := createJwtToken(cfg.SESSION_SECRET, user.ID.String())
 	if err != nil {
+		slog.Info("createJWT", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
 	}
 
 	refreshToken, err := createRefreshToken()
 	if err != nil {
+		slog.Info("createRefreshToken", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
 	}
 
@@ -114,6 +65,7 @@ func (s *AuthService) ServiceOauthCallback(ctx context.Context, cfg *config.Conf
 	expire_at := time.Now().Add(720 * time.Hour)
 
 	if err := s.repo.repoInsertToken(ctx, user.ID.String(), token_hash, user_agent, ip_address, expire_at); err != nil {
+		slog.Info("repoInsertToken", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
 	}
 
@@ -222,11 +174,14 @@ func (s *AuthService) ServiceSignUp(ctx context.Context, cfg *config.Config, ema
 		return fmt.Errorf("ServiceSignUp: %w", err)
 	}
 	tokenHash := hashToken(token)
-	payload := TokenPayload{UserID: userID.String(), Kind: "verify_email", Email: emailAddr}
+	payload := TokenPayload{UserID: userID.String(), Email: emailAddr}
 	b, _ := json.Marshal(payload)
+
 	if err := s.repo.repoSetUserToken(ctx, "token:"+tokenHash, b, 5*time.Minute); err != nil {
+
 		return fmt.Errorf("ServiceSignUp: %w", err)
 	}
+	slog.Info("repoSetUserToken", "token", tokenHash)
 
 	// send verification email
 	link := cfg.BACKEND_URL + "/v1/auth/verify?token=" + token
@@ -237,12 +192,79 @@ func (s *AuthService) ServiceSignUp(ctx context.Context, cfg *config.Config, ema
 	return nil
 }
 
+// ForgotPassword: generate reset token and email frontend reset link
+func (s *AuthService) ServiceForgotPassword(ctx context.Context, cfg *config.Config, emailAddr string) error {
+	// find user; if not found, return success to avoid account enumeration
+	user, err := s.repo.GetUserByEmail(ctx, emailAddr)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("ServiceForgotPassword: %w", err)
+	}
+
+	token, err := createRefreshToken()
+	if err != nil {
+		return fmt.Errorf("ServiceForgotPassword: %w", err)
+	}
+	tokenHash := hashToken(token)
+	payload := TokenPayload{UserID: user.ID.String(), Email: emailAddr}
+	b, _ := json.Marshal(payload)
+
+	if err := s.repo.repoSetUserToken(ctx, "token:"+tokenHash, b, 1*time.Hour); err != nil {
+		return fmt.Errorf("ServiceForgotPassword: %w", err)
+	}
+
+	link := cfg.FRONTEND_URL + "/reset-password?token=" + token
+	if err := email.SendVerificationEmail(cfg, emailAddr, link); err != nil {
+		return fmt.Errorf("ServiceForgotPassword: %w", err)
+	}
+	return nil
+}
+
+// ResetPassword: consume reset token, update password, and revoke existing sessions.
+func (s *AuthService) ServiceResetPassword(ctx context.Context, cfg *config.Config, token, newPassword, userAgent, ipAddr string) error {
+	if token == "" {
+		return fmt.Errorf("ServiceResetPassword: %w", fmt.Errorf("missing token"))
+	}
+	tokenHash := hashToken(token)
+	res, err := s.repo.repoConsumeUserToken(ctx, "token:"+tokenHash)
+	if err != nil {
+		return fmt.Errorf("ServiceResetPassword: %w", err)
+	}
+	var payload TokenPayload
+	if err := json.Unmarshal([]byte(res), &payload); err != nil {
+		return fmt.Errorf("ServiceResetPassword: %w", err)
+	}
+	uid := payload.UserID
+	if uid == "" {
+		return fmt.Errorf("ServiceResetPassword: %w", fmt.Errorf("invalid token payload"))
+	}
+
+	hashed, err := HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("ServiceResetPassword: %w", err)
+	}
+	if err := s.repo.UpdatePassword(ctx, uid, hashed); err != nil {
+		return fmt.Errorf("ServiceResetPassword: %w", err)
+	}
+
+	// revoke existing sessions for security (do not issue new tokens)
+	if err := s.repo.repoDeleteSessionsByUser(ctx, uid); err != nil {
+		return fmt.Errorf("ServiceResetPassword: %w", err)
+	}
+
+	return nil
+}
+
 // VerifyEmail: consume verification token, mark user verified, and issue tokens
 func (s *AuthService) ServiceVerifyEmail(ctx context.Context, cfg *config.Config, token string, userAgent, ipAddr string) (*LoginUserResponse, error) {
 	if token == "" {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", fmt.Errorf("missing token"))
 	}
+	slog.Info("ServiceVerifyEmail RAW TOKEN", "raw_token", token, "length", len(token))
 	tokenHash := hashToken(token)
+	slog.Info("ServiceVerifyEmail", "token", tokenHash)
 	res, err := s.repo.repoConsumeUserToken(ctx, "token:"+tokenHash)
 	if err != nil {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", err)

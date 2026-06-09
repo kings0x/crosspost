@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -21,28 +22,38 @@ func NewAuthHandler(service *AuthService, cfg *config.Config) *AuthHandler {
 }
 
 func (h *AuthHandler) OauthBegin(c *gin.Context) {
-
 	setProvider(c)
 
-	platform := c.Param("provider") // "google"
+	session, _ := gothic.Store.Get(c.Request, gothic.SessionName)
+	slog.Info("session debug",
+		"session_name", gothic.SessionName,
+		"session_id", session.ID,
+		"is_new", session.IsNew,
+		"values", session.Values,
+	)
+
 	intent := c.Query("intent")
 
-	url, err := h.service.ServiceOauthBegin(c.Request.Context(), h.cfg, platform, intent)
+	session, err := gothic.Store.Get(c.Request, gothic.SessionName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.Redirect(http.StatusTemporaryRedirect, url)
+	// TODO
+	//would implement this later if we want to support multiple oauth flows (e.g. link account) and need to distinguish between them in the callback
+	session.Values["intent"] = intent
+
+	if err := gothic.Store.Save(c.Request, c.Writer, session); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	gothic.BeginAuthHandler(c.Writer, c.Request)
 }
 
 func (h *AuthHandler) OauthCallback(c *gin.Context) {
 	setProvider(c)
-
-	state := c.Query("state")
-
-	user_agent := c.Request.UserAgent()
-	ip_addr := c.Request.RemoteAddr
 
 	gothUser, err := gothic.CompleteUserAuth(c.Writer, c.Request)
 	if err != nil {
@@ -50,14 +61,34 @@ func (h *AuthHandler) OauthCallback(c *gin.Context) {
 		return
 	}
 
-	res, err := h.service.ServiceOauthCallback(c.Request.Context(), h.cfg, &gothUser, state, user_agent, ip_addr)
+	session, err := gothic.Store.Get(c.Request, gothic.SessionName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// intent, _ := session.Values["intent"].(string)
+
+	delete(session.Values, "intent")
+	session.Save(c.Request, c.Writer)
+
+	user_agent := c.Request.UserAgent()
+	ip_addr := c.Request.RemoteAddr
+
+	res, err := h.service.ServiceOauthCallback(c.Request.Context(), h.cfg, &gothUser, user_agent, ip_addr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong"})
 		return
 	}
 
 	secure := h.cfg.APP_ENV != "development"
-	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", domain, secure, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"userId":      res.UserId,
@@ -74,6 +105,7 @@ func (h *AuthHandler) OauthCallback(c *gin.Context) {
 func (h *AuthHandler) SignUp(c *gin.Context) {
 	var req signupRequest
 	if err := c.BindJSON(&req); err != nil {
+		slog.Error("invalid request", "err", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
@@ -99,8 +131,52 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	secure := h.cfg.APP_ENV != "development"
-	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", domain, secure, true)
 	c.JSON(http.StatusOK, gin.H{"access_token": res.AccessToken, "user_id": res.UserId})
+}
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req forgotPasswordRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if err := h.service.ServiceForgotPassword(c.Request.Context(), h.cfg, req.Email); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"status": "reset_sent"})
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req resetPasswordRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if err := h.service.ServiceResetPassword(c.Request.Context(), h.cfg, req.Token, req.Password, c.Request.UserAgent(), c.ClientIP()); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Clear any existing refresh cookie since sessions have been revoked
+	secure := h.cfg.APP_ENV != "development"
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
+	c.SetCookie("refresh_token", "", -1, "/", domain, secure, true)
+	c.JSON(http.StatusOK, gin.H{"status": "password_reset"})
 }
 
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
@@ -111,7 +187,13 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		return
 	}
 	secure := h.cfg.APP_ENV != "development"
-	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", domain, secure, true)
 	c.JSON(http.StatusOK, gin.H{"access_token": res.AccessToken, "user_id": res.UserId})
 }
 
@@ -129,7 +211,13 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	}
 
 	secure := h.cfg.APP_ENV != "development"
-	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", h.cfg.BACKEND_URL, secure, true)
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
+	c.SetCookie("refresh_token", res.RefreshToken, 60*60*24*30, "/", domain, secure, true)
 	c.JSON(http.StatusOK, gin.H{"access_token": res.AccessToken})
 }
 
@@ -143,8 +231,15 @@ func (h *AuthHandler) Revoke(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	secure := h.cfg.APP_ENV != "development"
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
 	// delete cookie
-	c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, false, true)
+	c.SetCookie("refresh_token", "", -1, "/", domain, false, true)
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
 
@@ -157,7 +252,13 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		}
 		// clear cookie
 		secure := h.cfg.APP_ENV != "development"
-		c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, secure, true)
+		var domain string
+		if secure {
+			domain = h.cfg.COOKIE_DOMAIN
+		} else {
+			domain = ""
+		}
+		c.SetCookie("refresh_token", "", -1, "/", domain, secure, true)
 		c.JSON(http.StatusOK, gin.H{"status": "logged_out"})
 		return
 	}
@@ -180,7 +281,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 	// clear cookie if present
 	secure := h.cfg.APP_ENV != "development"
-	c.SetCookie("refresh_token", "", -1, "/", h.cfg.BACKEND_URL, secure, true)
+	var domain string
+	if secure {
+		domain = h.cfg.COOKIE_DOMAIN
+	} else {
+		domain = ""
+	}
+
+	c.SetCookie("refresh_token", "", -1, "/", domain, secure, true)
 	c.JSON(http.StatusOK, gin.H{"status": "logged_out"})
 }
 
@@ -191,37 +299,26 @@ func setProvider(c *gin.Context) {
 	c.Request.URL.RawQuery = q.Encode()
 }
 
-//db would be
-//users
-//user_sessions
-//user_tokens(one time stuff)
-//i think a seperate place for oauth
-
-//6 functions
-//first is google oauth
-//second is to handle the callback
-//third is the signup function
-//fourth is the login function
-//fifth is the token refresh function
-//sixth is the logout function
-
-//then we would have two pure functions
-//issue_token
-//setupProvider
-
 func SetupOAuth(cfg *config.Config) {
 	goth.UseProviders(
 		google.New(
 			cfg.GOOGLE_CLIENT_ID,
 			cfg.GOOGLE_CLIENT_SECRET,
-			cfg.BACKEND_URL+"/v1/auth/google/callback",
+			cfg.BACKEND_URL+"/v1/auth/oauth/google/callback",
 			"email", "profile",
 		),
 	)
 
 	store := sessions.NewCookieStore([]byte(cfg.SESSION_SECRET))
-	store.MaxAge(300)
-	store.Options.HttpOnly = true
-	store.Options.Secure = cfg.APP_ENV != "development"
+	secure := cfg.APP_ENV != "development"
+
+	store.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   300,
+		HttpOnly: true,
+		Secure:   secure,
+		Domain:   cfg.COOKIE_DOMAIN,
+		SameSite: http.SameSiteLaxMode,
+	}
 	gothic.Store = store
 }

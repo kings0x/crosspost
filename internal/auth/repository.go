@@ -95,37 +95,6 @@ func (r *AuthRepository) repoInsertOauthAccount(ctx context.Context, user_id str
 	return nil
 }
 
-func (r *AuthRepository) repoSetOauthState(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	if err := r.redis.Set(ctx, key, value, ttl).Err(); err != nil {
-		return fmt.Errorf("repoSetOauthState: %w", err)
-	}
-	return nil
-}
-
-func (r *AuthRepository) repoVerifyOauthState(ctx context.Context, key string) (string, error) {
-	// Atomically GET + DEL using a Lua script.
-	script := rds.NewScript(`
-		local val = redis.call("GET", KEYS[1])
-		if val then
-			redis.call("DEL", KEYS[1])
-		end
-		return val
-	`)
-
-	res, err := script.Run(ctx, r.redis, []string{key}).Result()
-	if err != nil && err != rds.Nil {
-		return "", fmt.Errorf("repoVerifyOauthState: %w", err)
-	}
-	if res == nil {
-		return "", fmt.Errorf("repoVerifyOauthState: %w", fmt.Errorf("not found"))
-	}
-	s, ok := res.(string)
-	if !ok {
-		return "", fmt.Errorf("repoVerifyOauthState: %w", fmt.Errorf("invalid value type"))
-	}
-	return s, nil
-}
-
 func (r *AuthRepository) GetUserByEmail(ctx context.Context, email string) (*UserRow, error) {
 	query := `
 		SELECT id, email, password_hash, avatar_url, email_verified, created_at

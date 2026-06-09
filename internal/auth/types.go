@@ -25,8 +25,16 @@ type OAuthState struct {
 // TokenPayload represents one-time tokens stored in Redis (magic links, etc.)
 type TokenPayload struct {
 	UserID string `json:"user_id"`
-	Kind   string `json:"kind,omitempty"`
 	Email  string `json:"email,omitempty"`
+}
+
+type forgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type resetPasswordRequest struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 // SessionPayload represents a refresh session stored in Redis
