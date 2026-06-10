@@ -23,10 +23,10 @@ func NewAuthRepository(db *db.Database, redisClient *rds.Client) *AuthRepository
 	return &AuthRepository{db, redisClient}
 }
 
-func (r *AuthRepository) queryUpsertUser(ctx context.Context, gothUser *goth.User) (UpsertUserRow, error) {
+func (r *AuthRepository) queryUpsertUser(ctx context.Context, gothUser *goth.User, role string) (UpsertUserRow, error) {
 	query := `
-		INSERT INTO users (email, avatar_url, email_verified, email_verified_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (email, avatar_url, email_verified, email_verified_at, role)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (email) DO UPDATE SET
 			avatar_url = EXCLUDED.avatar_url,
 			email_verified = EXCLUDED.email_verified,
@@ -40,6 +40,7 @@ func (r *AuthRepository) queryUpsertUser(ctx context.Context, gothUser *goth.Use
 		gothUser.AvatarURL,
 		true,
 		time.Now(),
+		role,
 	).Scan(&user.ID, &user.Email, &user.AvatarURL, &user.CreatedAt)
 
 	if err != nil {
@@ -116,12 +117,12 @@ func (r *AuthRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 	return &u, nil
 }
 
-func (r *AuthRepository) CreateUser(ctx context.Context, email string, passwordHash string) (uuid.UUID, error) {
+func (r *AuthRepository) CreateUser(ctx context.Context, email string, passwordHash, role string) (uuid.UUID, error) {
 	query := `
-		INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id
+		INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id
 	`
 	var id uuid.UUID
-	err := r.db.Pool.QueryRow(ctx, query, email, passwordHash).Scan(&id)
+	err := r.db.Pool.QueryRow(ctx, query, email, passwordHash, role).Scan(&id)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("CreateUser: %w", err)
 	}

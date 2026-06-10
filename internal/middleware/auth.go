@@ -33,7 +33,7 @@ func RequireAuth(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		var claims jwt.Claims
-		if err := parsed.Claims([]byte(cfg.SESSION_SECRET), &claims); err != nil {
+		if err := parsed.Claims([]byte(cfg.JWT_SECRET), &claims); err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
 			return
 		}

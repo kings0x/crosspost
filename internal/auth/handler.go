@@ -31,13 +31,6 @@ func (h *AuthHandler) OauthBegin(c *gin.Context) {
 		return
 	}
 
-	slog.Info("session debug",
-		"session_name", gothic.SessionName,
-		"session_id", session.ID,
-		"is_new", session.IsNew,
-		"values", session.Values,
-	)
-
 	intent := c.Query("intent")
 
 	// TODO
@@ -312,7 +305,7 @@ func SetupOAuth(cfg *config.Config) {
 		),
 	)
 
-	store := sessions.NewCookieStore([]byte(cfg.SESSION_SECRET))
+	store := sessions.NewCookieStore([]byte(cfg.SESSION_SECRET), []byte(cfg.SESSION_ENCRYPT_KEY))
 	secure := cfg.APP_ENV != "development"
 
 	store.Options = &sessions.Options{

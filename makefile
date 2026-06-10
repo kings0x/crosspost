@@ -115,13 +115,13 @@ help:
 
 
 migrate-up:
-	@infisical run --env=dev -- sh -c 'migrate -path ./migrations -database "$$(echo $$DATABASE_URL | sed s/postgres/pgx5/)" up'
+	@infisical run --env=dev -- sh -c 'DB=$$(echo $$DATABASE_URL | sed "s|^postgres://|pgx5://|;s|^postgresql://|pgx5://|") && migrate -path ./migrations -database "$$DB" up'
 
 migrate-down:
-	@infisical run --env=dev -- sh -c 'migrate -path ./migrations -database "$$(echo $$DATABASE_URL | sed s/postgres/pgx5/)" down'
+	@infisical run --env=dev -- sh -c 'DB=$$(echo $$DATABASE_URL | sed "s|^postgres://|pgx5://|;s|^postgresql://|pgx5://|") && migrate -path ./migrations -database "$$DB" down'
 
 migrate-force:
-	@infisical run --env=dev -- sh -c 'migrate -path ./migrations -database "$$(echo $$DATABASE_URL | sed s/postgres/pgx5/)" force $(VERSION)'
+	@infisical run --env=dev -- sh -c 'DB=$$(echo $$DATABASE_URL | sed "s|^postgres://|pgx5://|;s|^postgresql://|pgx5://|") && migrate -path ./migrations -database "$$DB" force $(VERSION)'
 
 run:
 	@infisical run --env=dev --path=/ -- go run ./cmd/api/main.go
