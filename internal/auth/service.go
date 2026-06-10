@@ -74,7 +74,7 @@ func (s *AuthService) ServiceOauthCallback(ctx context.Context, cfg *config.Conf
 		Email:        user.Email,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		AvatarURL:    user.AvatarURL,
+		AvatarURL:    user.AvatarURL.String,
 		CreatedAt:    user.CreatedAt.String(),
 	}
 

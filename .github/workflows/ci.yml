@@ -51,7 +51,7 @@ jobs:
 
       - name: Cache Infisical CLI
         id: cache-infisical
-        uses: actions/cache@v4
+        uses: actions/cache@0c907a750d5d1667e0699e9b7e3e710f3f5b4c8d
         with:
           path: ~/.local/bin/infisical
           key: infisical-${{ runner.os }}-latest
@@ -84,9 +84,9 @@ jobs:
             --token="${INFISICAL_TOKEN}" \
             --projectId="${INFISICAL_PROJECT_ID}" \
             --env=staging \
-            --format=dotenv > /tmp/infisical_secrets.env
+            --format=dotenv-export > /tmp/infisical_secrets.env
 
-          sed "s/'//g" /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+          sed 's/^export //' /tmp/infisical_secrets.env >> "$GITHUB_ENV"
 
       - name: Override database and redis for CI
         run: |
@@ -104,7 +104,7 @@ jobs:
 
       - name: Cache migrate CLI
         id: cache-migrate
-        uses: actions/cache@v4
+        uses: actions/cache@0c907a750d5d1667e0699e9b7e3e710f3f5b4c8d
         with:
           path: ~/go/bin/migrate
           key: migrate-${{ runner.os }}-v4.19.1-pgx5
@@ -116,7 +116,7 @@ jobs:
 
       - name: Run migrations
         run: |
-          MIGRATION_URL=$(echo "${DATABASE_URL}" | tr -d "'" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
+          MIGRATION_URL=$(echo "${DATABASE_URL}" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
           migrate -path ./migrations -database "${MIGRATION_URL}" up
 
       - name: Test
