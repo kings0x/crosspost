@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - develop
+  pull_request:
+    branches:
+      - develop
+    types:
+      - closed
 
 permissions:
   contents: read
@@ -11,6 +16,7 @@ permissions:
 
 jobs:
   migrate:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -69,6 +75,7 @@ jobs:
           migrate -path ./migrations -database "${MIGRATION_URL}" up
 
   deploy:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     name: Deploy staging and smoke test
     needs: migrate
     runs-on: ubuntu-latest
