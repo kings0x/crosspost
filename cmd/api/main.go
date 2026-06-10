@@ -43,7 +43,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
-	defer redis.Close()
+
+	defer func() {
+		if err := redis.Close(); err != nil {
+			log.Printf("failed to close redis connection: %v", err)
+		}
+	}()
 
 	srv := server.New(pgDb, redis, &cfg)
 

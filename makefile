@@ -6,7 +6,8 @@
 #the docker login and push dummy image to ghcr
 
 
-.PHONY: gh-setup gh-envs gh-verify gh-secrets gh-staging gh-production help
+.PHONY: gh-setup gh-envs gh-verify gh-secrets gh-staging gh-production help lint
+
 
 REPO := kings0x/crosspost
 STAGING_ENV := staging
@@ -126,3 +127,8 @@ run:
 	@infisical run --env=dev --path=/ -- go run ./cmd/api/main.go
 
 dev: migrate-up run
+
+
+lint:
+	@echo "Running golangci-lint..."
+	@golangci-lint run --fix ./...

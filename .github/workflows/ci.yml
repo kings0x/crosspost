@@ -100,6 +100,7 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
+          only-new-issues: true
 
       - name: Cache migrate CLI
         id: cache-migrate
