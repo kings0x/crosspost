@@ -51,7 +51,7 @@ jobs:
 
       - name: Cache Infisical CLI
         id: cache-infisical
-        uses: actions/cache@0c907a750d5d1667e0699e9b7e3e710f3f5b4c8d
+        uses: actions/cache@v4
         with:
           path: ~/.local/bin/infisical
           key: infisical-${{ runner.os }}-latest
@@ -104,7 +104,7 @@ jobs:
 
       - name: Cache migrate CLI
         id: cache-migrate
-        uses: actions/cache@0c907a750d5d1667e0699e9b7e3e710f3f5b4c8d
+        uses: actions/cache@v4
         with:
           path: ~/go/bin/migrate
           key: migrate-${{ runner.os }}-v4.19.1-pgx5

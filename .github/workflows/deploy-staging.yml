@@ -22,7 +22,7 @@ jobs:
 
       - name: Cache Infisical CLI
         id: cache-infisical
-        uses: actions/cache@0c907a750d5d1667e0699e9b7e3e710f3f5b4c8d # v4
+        uses: actions/cache@v4
         with:
           path: ~/.local/bin/infisical
           key: infisical-${{ runner.os }}-latest
@@ -85,7 +85,7 @@ jobs:
 
       - name: Cache Infisical CLI
         id: cache-infisical
-        uses: actions/cache@0c907a750d5d1667e0699e9b7e3e710f3f5b4c8d # v4
+        uses: actions/cache@v4
         with:
           path: ~/.local/bin/infisical
           key: infisical-${{ runner.os }}-latest
