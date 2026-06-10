@@ -105,7 +105,7 @@ func (srv *Server) RegisterRoutes(r *gin.Engine) {
 			auth.GET("/verify", c.auth.VerifyEmail)
 			auth.POST("/refresh", c.auth.Refresh)
 			auth.POST("/revoke", c.auth.Revoke)
-			auth.POST("/logout", middleware.RequireAuth(srv.cfg), c.auth.Logout)
+			auth.POST("/logout", c.auth.Logout)
 
 			oauth := auth.Group("/oauth")
 			{

@@ -17,6 +17,7 @@ type Config struct {
 	GOOGLE_CLIENT_SECRET string
 	JWT_SECRET           string
 	SESSION_SECRET       string
+	SESSION_ENCRYPT_KEY  string
 	EMAIL_FROM           string
 	RESEND_API_KEY       string
 }
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 		GOOGLE_CLIENT_SECRET: getenv("GOOGLE_CLIENT_SECRET", ""),
 		JWT_SECRET:           getenv("JWT_SECRET", ""),
 		SESSION_SECRET:       getenv("SESSION_SECRET", ""),
+		SESSION_ENCRYPT_KEY:  getenv("SESSION_ENCRYPT_KEY", ""),
 		EMAIL_FROM:           getenv("EMAIL_FROM", ""),
 		RESEND_API_KEY:       getenv("RESEND_API_KEY", ""),
 	}
@@ -78,6 +80,10 @@ func (cfg *Config) Validate() error {
 
 	if cfg.SESSION_SECRET == "" {
 		return fmt.Errorf("SESSION_SECRET NOT FOUND")
+	}
+
+	if cfg.SESSION_ENCRYPT_KEY == "" {
+		return fmt.Errorf("SESSION_ENCRYPT_KEY NOT FOUND")
 	}
 
 	return nil
