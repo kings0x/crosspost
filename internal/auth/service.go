@@ -36,7 +36,7 @@ func NewAuthService(repo *AuthRepository) *AuthService {
 
 func (s *AuthService) ServiceOauthCallback(ctx context.Context, cfg *config.Config, gothUser *goth.User, user_agent, ip_address string) (*LoginUserResponse, error) {
 
-	user, err := s.repo.queryUpsertUser(ctx, gothUser)
+	user, err := s.repo.queryUpsertUser(ctx, gothUser, "user")
 	if err != nil {
 		slog.Info("queryUpsertUser", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
@@ -161,7 +161,7 @@ func (s *AuthService) ServiceSignUp(ctx context.Context, cfg *config.Config, ema
 			}
 			passHash = h
 		}
-		id, err := s.repo.CreateUser(ctx, emailAddr, passHash)
+		id, err := s.repo.CreateUser(ctx, emailAddr, passHash, "user")
 		if err != nil {
 			return fmt.Errorf("ServiceSignUp: %w", err)
 		}
