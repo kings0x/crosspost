@@ -40,8 +40,6 @@ func NewDatabase(ctx context.Context, url string) (*Database, error) {
 		return nil, err
 	}
 
-	db.Close()
-
 	return db, nil
 }
 
