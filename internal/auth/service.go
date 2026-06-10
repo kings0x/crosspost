@@ -48,7 +48,7 @@ func (s *AuthService) ServiceOauthCallback(ctx context.Context, cfg *config.Conf
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
 	}
 
-	accessToken, err := createJwtToken(cfg.SESSION_SECRET, user.ID.String())
+	accessToken, err := createJwtToken(cfg.JWT_SECRET, user.ID.String())
 	if err != nil {
 		slog.Info("createJWT", "err", err)
 		return nil, fmt.Errorf("ServiceOauthCallback: %w", err)
@@ -216,7 +216,7 @@ func (s *AuthService) ServiceForgotPassword(ctx context.Context, cfg *config.Con
 	}
 
 	link := cfg.FRONTEND_URL + "/reset-password?token=" + token
-	if err := email.SendVerificationEmail(cfg, emailAddr, link); err != nil {
+	if err := email.SendPasswordResetEmail(cfg, emailAddr, link); err != nil {
 		return fmt.Errorf("ServiceForgotPassword: %w", err)
 	}
 	return nil
@@ -262,7 +262,7 @@ func (s *AuthService) ServiceVerifyEmail(ctx context.Context, cfg *config.Config
 	if token == "" {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", fmt.Errorf("missing token"))
 	}
-	slog.Info("ServiceVerifyEmail RAW TOKEN", "raw_token", token, "length", len(token))
+
 	tokenHash := hashToken(token)
 	slog.Info("ServiceVerifyEmail", "token", tokenHash)
 	res, err := s.repo.repoConsumeUserToken(ctx, "token:"+tokenHash)
@@ -283,7 +283,7 @@ func (s *AuthService) ServiceVerifyEmail(ctx context.Context, cfg *config.Config
 	}
 
 	// issue tokens
-	accessToken, err := createJwtToken(cfg.SESSION_SECRET, uid)
+	accessToken, err := createJwtToken(cfg.JWT_SECRET, uid)
 	if err != nil {
 		return nil, fmt.Errorf("ServiceVerifyEmail: %w", err)
 	}
@@ -327,7 +327,7 @@ func (s *AuthService) ServiceLogin(ctx context.Context, cfg *config.Config, emai
 		return nil, fmt.Errorf("ServiceLogin: %w", err)
 	}
 
-	accessToken, err := createJwtToken(cfg.SESSION_SECRET, user.ID.String())
+	accessToken, err := createJwtToken(cfg.JWT_SECRET, user.ID.String())
 	if err != nil {
 		return nil, fmt.Errorf("ServiceLogin: %w", err)
 	}
@@ -382,7 +382,7 @@ func (s *AuthService) ServiceRefresh(ctx context.Context, cfg *config.Config, ra
 		return nil, fmt.Errorf("ServiceRefresh: %w", err)
 	}
 
-	accessToken, err := createJwtToken(cfg.SESSION_SECRET, uid)
+	accessToken, err := createJwtToken(cfg.JWT_SECRET, uid)
 	if err != nil {
 		return nil, fmt.Errorf("ServiceRefresh: %w", err)
 	}

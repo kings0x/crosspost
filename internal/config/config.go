@@ -15,9 +15,9 @@ type Config struct {
 	FRONTEND_URL         string
 	GOOGLE_CLIENT_ID     string
 	GOOGLE_CLIENT_SECRET string
+	JWT_SECRET           string
 	SESSION_SECRET       string
 	EMAIL_FROM           string
-	EMAIL_PROVIDER       string
 	RESEND_API_KEY       string
 }
 
@@ -27,15 +27,15 @@ func Load() (Config, error) {
 		PORT:                 getenv("PORT", "8000"),
 		DATABASE_URL:         getenv("DATABASE_URL", ""),
 		REDIS_URL:            getenv("REDIS_URL", ""),
-		APP_ENV:              getenv("APP_ENV", "developement"),
+		APP_ENV:              getenv("APP_ENV", "development"),
 		BACKEND_URL:          getenv("BACKEND_URL", ""),
 		COOKIE_DOMAIN:        getenv("COOKIE_DOMAIN", ""),
 		FRONTEND_URL:         getenv("FRONTEND_URL", ""),
 		GOOGLE_CLIENT_ID:     getenv("GOOGLE_CLIENT_ID", ""),
 		GOOGLE_CLIENT_SECRET: getenv("GOOGLE_CLIENT_SECRET", ""),
+		JWT_SECRET:           getenv("JWT_SECRET", ""),
 		SESSION_SECRET:       getenv("SESSION_SECRET", ""),
 		EMAIL_FROM:           getenv("EMAIL_FROM", ""),
-		EMAIL_PROVIDER:       getenv("EMAIL_PROVIDER", ""),
 		RESEND_API_KEY:       getenv("RESEND_API_KEY", ""),
 	}
 
@@ -70,10 +70,6 @@ func (cfg *Config) Validate() error {
 
 	if cfg.EMAIL_FROM == "" {
 		return fmt.Errorf("EMAIL_FROM NOT FOUND")
-	}
-
-	if cfg.EMAIL_PROVIDER == "" {
-		return fmt.Errorf("EMAIL_PROVIDER NOT FOUND")
 	}
 
 	if cfg.RESEND_API_KEY == "" {

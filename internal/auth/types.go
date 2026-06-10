@@ -62,7 +62,7 @@ type UpsertUserRow struct {
 
 type signupRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password,omitempty"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 type loginRequest struct {

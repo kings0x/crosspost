@@ -129,7 +129,7 @@ func (r *AuthRepository) CreateUser(ctx context.Context, email string, passwordH
 }
 
 func (r *AuthRepository) MarkUserVerified(ctx context.Context, userID string) error {
-	query := `UPDATE users SET email_verified = true, email_verified_at = now() WHERE id = $1`
+	query := `UPDATE users SET email_verified = true, email_verified_at = now(), updated_at = now() WHERE id = $1`
 	if _, err := r.db.Pool.Exec(ctx, query, userID); err != nil {
 		return fmt.Errorf("MarkUserVerified: %w", err)
 	}

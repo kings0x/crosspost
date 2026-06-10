@@ -24,7 +24,13 @@ func NewAuthHandler(service *AuthService, cfg *config.Config) *AuthHandler {
 func (h *AuthHandler) OauthBegin(c *gin.Context) {
 	setProvider(c)
 
-	session, _ := gothic.Store.Get(c.Request, gothic.SessionName)
+	session, err := gothic.Store.Get(c.Request, gothic.SessionName)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	slog.Info("session debug",
 		"session_name", gothic.SessionName,
 		"session_id", session.ID,
@@ -33,12 +39,6 @@ func (h *AuthHandler) OauthBegin(c *gin.Context) {
 	)
 
 	intent := c.Query("intent")
-
-	session, err := gothic.Store.Get(c.Request, gothic.SessionName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 
 	// TODO
 	//would implement this later if we want to support multiple oauth flows (e.g. link account) and need to distinguish between them in the callback
@@ -70,10 +70,13 @@ func (h *AuthHandler) OauthCallback(c *gin.Context) {
 	// intent, _ := session.Values["intent"].(string)
 
 	delete(session.Values, "intent")
-	session.Save(c.Request, c.Writer)
+	if err := session.Save(c.Request, c.Writer); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	user_agent := c.Request.UserAgent()
-	ip_addr := c.Request.RemoteAddr
+	ip_addr := c.ClientIP()
 
 	res, err := h.service.ServiceOauthCallback(c.Request.Context(), h.cfg, &gothUser, user_agent, ip_addr)
 	if err != nil {
@@ -239,7 +242,7 @@ func (h *AuthHandler) Revoke(c *gin.Context) {
 		domain = ""
 	}
 	// delete cookie
-	c.SetCookie("refresh_token", "", -1, "/", domain, false, true)
+	c.SetCookie("refresh_token", "", -1, "/", domain, secure, true)
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
 
