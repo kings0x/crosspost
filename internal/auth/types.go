@@ -56,7 +56,7 @@ type UserRow struct {
 type UpsertUserRow struct {
 	ID        uuid.UUID
 	Email     string
-	AvatarURL string
+	AvatarURL sql.NullString
 	CreatedAt time.Time
 }
 

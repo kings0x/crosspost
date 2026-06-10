@@ -86,6 +86,10 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("SESSION_ENCRYPT_KEY NOT FOUND")
 	}
 
+	if cfg.JWT_SECRET == "" {
+		return fmt.Errorf("JWT_SECRET NOT FOUND")
+	}
+
 	return nil
 }
 

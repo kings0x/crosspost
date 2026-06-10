@@ -37,6 +37,7 @@ func NewDatabase(ctx context.Context, url string) (*Database, error) {
 	}
 
 	if err := db.HealthCheck(ctx); err != nil {
+		db.Close()
 		return nil, err
 	}
 

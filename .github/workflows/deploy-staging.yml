@@ -55,10 +55,9 @@ jobs:
             --token="${INFISICAL_TOKEN}" \
             --projectId="${INFISICAL_PROJECT_ID}" \
             --env=staging \
-            --format=dotenv > /tmp/infisical_secrets.env
+            --format=dotenv-export > /tmp/infisical_secrets.env
 
-          # strip all single quotes then write to GITHUB_ENV
-          sed "s/'//g" /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+          sed 's/^export //' /tmp/infisical_secrets.env >> "$GITHUB_ENV"
 
       - name: Install migrate CLI
         run: |
@@ -66,7 +65,7 @@ jobs:
 
       - name: Run migrations
         run: |
-          MIGRATION_URL=$(echo "${DATABASE_URL}" | tr -d "'" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
+          MIGRATION_URL=$(echo "${DATABASE_URL}" | sed 's/^postgres:\/\//pgx5:\/\//;s/^postgresql:\/\//pgx5:\/\//')
           migrate -path ./migrations -database "${MIGRATION_URL}" up
 
   deploy:
@@ -119,10 +118,9 @@ jobs:
             --token="${INFISICAL_TOKEN}" \
             --projectId="${INFISICAL_PROJECT_ID}" \
             --env=staging \
-            --format=dotenv > /tmp/infisical_secrets.env
+            --format=dotenv-export > /tmp/infisical_secrets.env
 
-          # strip all single quotes then write to GITHUB_ENV
-          sed "s/'//g" /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+          sed 's/^export //' /tmp/infisical_secrets.env >> "$GITHUB_ENV"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3

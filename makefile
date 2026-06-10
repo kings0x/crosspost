@@ -132,3 +132,13 @@ dev: migrate-up run
 lint:
 	@echo "Running golangci-lint..."
 	@golangci-lint run --fix ./...
+
+# ────────────────────────────────────────────
+# GitHub PR
+# ────────────────────────────────────────────
+
+pr:
+	@gh pr create --base develop --title "$(TITLE)" --body ""
+
+pr-view:
+	@gh pr list --state open
