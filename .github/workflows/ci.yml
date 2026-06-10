@@ -97,7 +97,9 @@ jobs:
         run: go mod download
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.2
 
       - name: Cache migrate CLI
         id: cache-migrate
