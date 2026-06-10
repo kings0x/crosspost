@@ -9,7 +9,7 @@ import (
 )
 
 type Database struct {
-	pool *pgxpool.Pool
+	Pool *pgxpool.Pool
 }
 
 func NewDatabase(ctx context.Context, url string) (*Database, error) {
@@ -17,7 +17,7 @@ func NewDatabase(ctx context.Context, url string) (*Database, error) {
 	config, err := pgxpool.ParseConfig(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse config with err: %w", err)
+		return nil, fmt.Errorf("NewDatabase: %w", err)
 	}
 
 	config.MaxConnIdleTime = 30 * time.Minute
@@ -26,14 +26,14 @@ func NewDatabase(ctx context.Context, url string) (*Database, error) {
 	config.MinConns = 5
 	config.HealthCheckPeriod = 1 * time.Minute
 
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	Pool, err := pgxpool.NewWithConfig(ctx, config)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to db with err: %w", err)
+		return nil, fmt.Errorf("NewDatabase: %w", err)
 	}
 
 	db := &Database{
-		pool,
+		Pool,
 	}
 
 	if err := db.HealthCheck(ctx); err != nil {
@@ -49,14 +49,14 @@ func (db *Database) HealthCheck(ctx context.Context) error {
 
 	defer cancel()
 
-	if err := db.pool.Ping(ctx); err != nil {
-		return fmt.Errorf("ping to db failed with err: %w", err)
+	if err := db.Pool.Ping(ctx); err != nil {
+		return fmt.Errorf("HealthCheck: %w", err)
 	}
 
 	var result int
 
-	if err := db.pool.QueryRow(ctx, "SELECT 1").Scan(&result); err != nil {
-		return fmt.Errorf("database query failed with err: %w", err)
+	if err := db.Pool.QueryRow(ctx, "SELECT 1").Scan(&result); err != nil {
+		return fmt.Errorf("HealthCheck: %w", err)
 	}
 
 	return nil
@@ -64,5 +64,5 @@ func (db *Database) HealthCheck(ctx context.Context) error {
 }
 
 func (db *Database) Close() {
-	db.pool.Close()
+	db.Pool.Close()
 }
