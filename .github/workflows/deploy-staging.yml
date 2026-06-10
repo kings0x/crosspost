@@ -63,7 +63,7 @@ jobs:
             --env=staging \
             --format=dotenv-export > /tmp/infisical_secrets.env
 
-          sed 's/^export //' /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+          sed 's/^export //' /tmp/infisical_secrets.env | sed -e "s/='\(.*\)'$/=\1/" -e 's/="\(.*\)"$/=\1/' >> "$GITHUB_ENV"
 
       - name: Install migrate CLI
         run: |
@@ -127,7 +127,8 @@ jobs:
             --env=staging \
             --format=dotenv-export > /tmp/infisical_secrets.env
 
-          sed 's/^export //' /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+          # Strip 'export ' prefix and any wrapping single/double quotes
+          sed 's/^export //' /tmp/infisical_secrets.env | sed -e "s/='\(.*\)'$/=\1/" -e 's/="\(.*\)"$/=\1/' >> "$GITHUB_ENV"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3

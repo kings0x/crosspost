@@ -86,7 +86,7 @@ jobs:
             --env=staging \
             --format=dotenv-export > /tmp/infisical_secrets.env
 
-          sed 's/^export //' /tmp/infisical_secrets.env >> "$GITHUB_ENV"
+          sed 's/^export //' /tmp/infisical_secrets.env | sed -e "s/='\(.*\)'$/=\1/" -e 's/="\(.*\)"$/=\1/' >> "$GITHUB_ENV"
 
       - name: Override database and redis for CI
         run: |
